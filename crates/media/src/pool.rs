@@ -703,9 +703,10 @@ impl Inner {
                 let rate = footage.frame_rate;
                 let n = Self::frame_count(rate, footage.duration);
                 let i = Self::frame_index(rate, t, n, footage.loop_count);
-                // Middle of the frame in the file's own timing (robust to timestamp rounding).
+                // The start of the frame in the file's own timing: the reader rounds a request to
+                // its nearest sample time (halves up), so the middle of a frame would pick the next one.
                 let native = footage.native_rate.unwrap_or(rate);
-                let mt = native.tick_of(i) + Tick(native.frame_duration().0 / 2);
+                let mt = native.tick_of(i);
                 Loc { key: key(&footage.path, i), media_t: Some(mt), float }
             }
         }
