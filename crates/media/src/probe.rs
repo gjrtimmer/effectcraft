@@ -19,10 +19,7 @@ pub fn probe(path: impl AsRef<Path>) -> Result<Footage> {
     // A movie is read in place (its index), not loaded whole.
     if let Some(src) = crate::stream::probe_source(path) {
         let mut f = footage_from_info(&path.to_string_lossy(), src?.info());
-        let header = crate::stream::movie_header(path);
-        let turn = header.as_deref().map_or(Orientation::NoTransforms, video_turn);
-        turn_footage(&mut f, turn);
-        correct_rate(&mut f, header.as_deref().and_then(video_rate));
+        correct_rate(&mut f, crate::stream::movie_header(path).as_deref().and_then(video_rate));
         return Ok(f);
     }
     let bytes = std::fs::read(path).map_err(|e| MediaError::Io(format!("{}: {e}", path.display())))?;
@@ -105,11 +102,9 @@ pub fn probe_bytes(path: &str, bytes: Arc<[u8]>) -> Result<Footage> {
         return probe_still_bytes(path, &bytes, fmt);
     }
     let name = Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string());
-    let turn = video_turn(&bytes);
     let rate = video_rate(&bytes);
     let src = filmcraft_codecs::open_bytes(&name, bytes)?;
     let mut f = footage_from_info(path, src.info());
-    turn_footage(&mut f, turn);
     correct_rate(&mut f, rate);
     Ok(f)
 }
@@ -121,16 +116,6 @@ fn correct_rate(f: &mut Footage, rate: Option<FrameRate>) {
         && let Some(rate) = rate
     {
         f.frame_rate = rate;
-    }
-}
-
-/// The size as displayed: a movie shot with the camera on its side trades width and height.
-fn turn_footage(f: &mut Footage, turn: Orientation) {
-    if swaps_sides(turn) {
-        std::mem::swap(&mut f.width, &mut f.height);
-        if f.pixel_aspect > 0.0 {
-            f.pixel_aspect = 1.0 / f.pixel_aspect;
-        }
     }
 }
 
@@ -257,25 +242,6 @@ pub(crate) fn load_oriented(bytes: &[u8], fmt: Option<image::ImageFormat>) -> im
     let mut img = image::DynamicImage::from_decoder(dec)?;
     img.apply_orientation(orientation);
     Ok(img)
-}
-
-/// The rotation an MP4/MOV movie is shown with (a phone held upright records sideways frames and
-/// says so in its video track's header): the quarter turn nearest the track's rotation. Only the
-/// rotation counts; any mirroring, scaling or offset in the header is ignored, and other
-/// containers have none.
-pub(crate) fn video_turn(bytes: &[u8]) -> Orientation {
-    let Ok(file) = filmcraft_isobmff::open(bytes) else { return Orientation::NoTransforms };
-    let Some(m) = file.tracks.iter().find(|t| t.kind == filmcraft_isobmff::TrackKind::Video).map(|t| t.matrix) else {
-        return Orientation::NoTransforms;
-    };
-    // [a b u; c d v; x y w]: (a, b) is where the picture's x axis points.
-    let (a, b) = (m[0] as i64, m[1] as i64);
-    match (a.abs() >= b.abs(), a >= 0, b >= 0) {
-        (true, true, _) => Orientation::NoTransforms,
-        (true, false, _) => Orientation::Rotate180,
-        (false, _, true) => Orientation::Rotate90,
-        (false, _, false) => Orientation::Rotate270,
-    }
 }
 
 /// The frame rate of an MP4/MOV movie's video track when the reader's own estimate, the median

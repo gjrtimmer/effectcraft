@@ -9,9 +9,8 @@ use effectcraft_raster::{Image, Px};
 use effectcraft_render::{FloatCurve, FootageSource};
 use effectcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
 use filmcraft_media::{FrameRequest, SharedSource};
-use image::metadata::Orientation;
 
-use crate::convert::{AlphaOp, dynamic_to_image, frame_to_image_in, frame_to_image_scaled, turned};
+use crate::convert::{AlphaOp, dynamic_to_image, frame_to_image_in, frame_to_image_scaled};
 use crate::gif_anim::{self, Anim};
 use crate::{MediaError, Result};
 
@@ -174,10 +173,9 @@ struct CacheState {
     last: HashMap<Arc<str>, i64>,
 }
 
-/// A movie/audio source by path and the turn its picture is shown with
-/// ([`crate::probe::video_turn`]), opened by the first caller while the others wait for it
+/// A movie/audio source by path, opened by the first caller while the others wait for it
 /// (`None`: failed to open; not retried until `forget`).
-type SourceSlot = Arc<OnceLock<Option<(SharedSource, Orientation)>>>;
+type SourceSlot = Arc<OnceLock<Option<SharedSource>>>;
 
 /// An animated GIF by path, as [`SourceSlot`] (the error message when it failed to load).
 type GifSlot = Arc<OnceLock<std::result::Result<Arc<Anim>, String>>>;
@@ -590,11 +588,6 @@ impl Inner {
     /// it again: a preview's frame workers, audio feeder, conform and waveform threads each
     /// decoded a long FLAC in full at once (#408).
     fn source(&self, path: &Arc<str>) -> Option<SharedSource> {
-        self.opened(path).map(|(src, _)| src)
-    }
-
-    /// [`Self::source`] and the turn the movie's picture is shown with.
-    fn opened(&self, path: &Arc<str>) -> Option<(SharedSource, Orientation)> {
         let slot = lock(&self.sources).entry(path.clone()).or_default().clone();
         slot.get_or_init(|| {
             self.opened.fetch_add(1, Ordering::Relaxed);
@@ -603,15 +596,10 @@ impl Inner {
             let in_memory = lock(&self.files).contains_key(&**path);
             let file = std::path::Path::new(&**path);
             let in_place = if in_memory { None } else { crate::stream::open_source(file) };
-            let in_place = in_place.map(|src| {
-                let turn = crate::stream::movie_header(file).map_or(Orientation::NoTransforms, |h| crate::probe::video_turn(&h));
-                src.map(|src| (src, turn))
-            });
             let opened = in_place.unwrap_or_else(|| {
                 self.read(path).and_then(|bytes| {
                     let name = std::path::Path::new(&**path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                    let turn = crate::probe::video_turn(&bytes);
-                    filmcraft_codecs::open_bytes(&name, bytes).map(|src| (src, turn)).map_err(MediaError::from)
+                    filmcraft_codecs::open_bytes(&name, bytes).map_err(MediaError::from)
                 })
             });
             match opened {
@@ -843,25 +831,23 @@ impl Inner {
                 Ok(dynamic_to_image(frame, op))
             }
             Some(mt) => {
-                let (src, turn) = self.opened(path).ok_or_else(|| MediaError::Io(format!("{path}: cannot open")))?;
+                let src = self.source(path).ok_or_else(|| MediaError::Io(format!("{path}: cannot open")))?;
                 let vf = src
                     .video_frame(FrameRequest::full(filmcraft_time::Tick(mt.0)))
                     .map_err(MediaError::from)
                     .inspect_err(|e| self.note_problem(path, &footage.codec, e))?;
-                // A movie shown turned a quarter (a phone held upright): the footage's size and
-                // the render's are the turned picture's, the decoded frame's are the file's.
-                let side = |(w, h): (u32, u32)| if crate::probe::swaps_sides(turn) { (h, w) } else { (w, h) };
                 // A reduced-resolution render's frame, made at its size (a frame of the footage's
-                // own size only, as the renderer resamples only those).
-                let (w, h) = side(loc.key.size);
+                // own size only, as the renderer resamples only those). The reader has already
+                // turned a phone's sideways movie upright, in the frame and in the footage's size.
+                let (w, h) = loc.key.size;
                 if w > 0
-                    && (vf.width, vf.height) == side((footage.width, footage.height))
+                    && (vf.width, vf.height) == (footage.width, footage.height)
                     && let Some(img) = frame_to_image_scaled(&vf, w, h)
                 {
-                    return Ok(turned(img, turn));
+                    return Ok(img);
                 }
                 let buf = lock(&self.cache).lru.take_spare(vf.width as usize * vf.height as usize);
-                Ok(turned(frame_to_image_in(&vf, op, buf), turn))
+                Ok(frame_to_image_in(&vf, op, buf))
             }
         }
     }

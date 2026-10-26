@@ -114,32 +114,6 @@ pub(crate) fn frame_to_image_in(f: &VideoFrame, op: AlphaOp, mut buf: Vec<Px>) -
     img
 }
 
-/// A movie frame turned the way its file says it is shown ([`crate::probe::video_turn`]:
-/// clockwise quarter turns; anything else leaves it as decoded).
-pub(crate) fn turned(img: Image, turn: image::metadata::Orientation) -> Image {
-    use image::metadata::Orientation;
-    let (w, h) = (img.width as usize, img.height as usize);
-    if img.data.len() != w * h || w == 0 || h == 0 {
-        return img;
-    }
-    // The source pixel shown at (x, y) of the turned picture.
-    let (tw, th, from): (usize, usize, fn(usize, usize, usize, usize) -> usize) = match turn {
-        Orientation::Rotate90 => (h, w, |x, y, w, h| (h - 1 - x) * w + y),
-        Orientation::Rotate180 => (w, h, |x, y, w, h| (h - 1 - y) * w + (w - 1 - x)),
-        Orientation::Rotate270 => (h, w, |x, y, w, _| x * w + (w - 1 - y)),
-        _ => return img,
-    };
-    let mut data = vec![[0.0; 4]; tw * th];
-    data.par_chunks_mut(tw).enumerate().for_each(|(y, row)| {
-        for (x, px) in row.iter_mut().enumerate() {
-            if let Some(s) = img.data.get(from(x, y, w, h)) {
-                *px = *s;
-            }
-        }
-    });
-    Image { width: tw as u32, height: th as u32, data }
-}
-
 /// A FilmCraft frame for a render that shows it at `w` × `h`, at most half its size each way:
 /// what `resample(&frame_to_image(f, op), w, h)` makes, converting a quarter of the pixels.
 /// Opaque 4:2:0 Y'CbCr is box-filtered to half size before conversion (each 2×2 block of luma,

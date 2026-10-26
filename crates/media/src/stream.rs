@@ -85,8 +85,8 @@ pub(crate) fn open_source(_path: &Path) -> Option<Result<SharedSource>> {
     None
 }
 
-/// The leading `ftyp` and the `moov` box of an ISO-BMFF movie on disk (all a track's display
-/// matrix needs), without reading the samples: top-level box headers are walked with positional
+/// The leading `ftyp` and the `moov` box of an ISO-BMFF movie on disk (all a track's frame
+/// times need), without reading the samples: top-level box headers are walked with positional
 /// reads. `None` when the file isn't ISO-BMFF or its `moov` is missing or implausibly large.
 #[cfg(any(unix, windows))]
 pub(crate) fn movie_header(path: &Path) -> Option<Vec<u8>> {
