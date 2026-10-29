@@ -286,7 +286,10 @@ project was opened (or last saved), and the `.part` file is moved over it. If an
 changed the project meanwhile (the headless MCP on the same file, say), nothing is overwritten: the
 status line says "Project changed on the server; use Save As" and the project stays unsaved. Any
 other failure also leaves it unsaved and says why. WebDAV has no atomic compare-and-move, so a
-change between the check and the move is not caught; a server without ETags cannot be checked.
+change between the check and the move is not caught; a server without ETags cannot be checked. After the move the saved version is
+recorded from the server's ETag; when the server gave the moved file a new ETag (some derive it from
+the modification time), the file is read back and the new ETag is recorded only if its bytes are the
+ones just uploaded, so the next save goes ahead while a file another client wrote stays a conflict.
 
 Any WebDAV server on the page's origin works if it supports `PROPFIND` and `GET` (and, for writable
 mounts, `PUT`, `MOVE`, `HEAD` and ETags). For example, behind one nginx:
