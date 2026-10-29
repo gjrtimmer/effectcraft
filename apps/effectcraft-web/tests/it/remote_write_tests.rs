@@ -30,7 +30,7 @@ fn only_writable_mounts_take_writes() {
     assert!(e.contains("read-only"), "{e}");
     assert!(check_writable(&c, "/elsewhere/x").is_err());
     assert!(put_part(&c, "/ro/x.ecproj", "a1b2").is_err());
-    assert!(move_part(&c, ORIGIN, "/ro/x.ecproj", "a1b2", true).is_err());
+    assert!(move_part(&c, ORIGIN, "/ro/x.ecproj", "a1b2", true, None).is_err());
     assert!(delete_part(&c, "/ro/x.ecproj", "a1b2").is_err());
 }
 
@@ -46,11 +46,11 @@ fn the_upload_goes_to_the_part_file_with_an_encoded_url() {
 /// The move names the destination and overwrite.
 #[test]
 fn the_move_names_the_destination_and_overwrite() {
-    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "a1b2", true).unwrap();
+    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "a1b2", true, None).unwrap();
     assert_eq!((m.method, m.url.as_str()), ("MOVE", "/dav/rw/x.ecproj.a1b2.part"));
     assert!(m.headers.contains(&("Destination", "https://app.example/dav/rw/x.ecproj".to_string())));
     assert!(m.headers.contains(&("Overwrite", "T".to_string())));
-    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "a1b2", false).unwrap();
+    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "a1b2", false, None).unwrap();
     assert!(m.headers.contains(&("Overwrite", "F".to_string())));
     // a conditional header on a MOVE would be tested against the .part file: never sent
     assert!(m.headers.iter().all(|(k, _)| !k.eq_ignore_ascii_case("if-match") && !k.eq_ignore_ascii_case("if-none-match")));
@@ -63,7 +63,7 @@ fn the_move_names_the_destination_and_overwrite() {
 fn hostile_paths_build_no_request() {
     for p in ["/rw/../ro/x", "/rw/a//b", "/rw/a\\b", "/rw/"] {
         assert!(put_part(&cfg(), p, "a1b2").is_err(), "{p}");
-        assert!(move_part(&cfg(), ORIGIN, p, "a1b2", true).is_err(), "{p}");
+        assert!(move_part(&cfg(), ORIGIN, p, "a1b2", true, None).is_err(), "{p}");
     }
 }
 
@@ -119,10 +119,24 @@ fn every_upload_has_a_part_file_of_its_own() {
     let b = put_part(&cfg(), "/rw/x.ecproj", "bbbb").unwrap();
     assert_ne!(a.url, b.url);
     // the move and the cleanup name the same part file as the upload
-    assert_eq!(move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "aaaa", true).unwrap().url, a.url);
+    assert_eq!(move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "aaaa", true, None).unwrap().url, a.url);
     assert_eq!(delete_part(&cfg(), "/rw/x.ecproj", "aaaa").unwrap().url, a.url);
     for bad in ["", "a/b", "a.b", "..", "a b", "é"] {
         assert!(put_part(&cfg(), "/rw/x.ecproj", bad).is_err(), "{bad:?}");
     }
     assert!(!valid_token(&"a".repeat(65)));
+}
+
+/// A replacing move carries the target's seen strong ETag in an `If` header tagged with the
+/// destination; weak, malformed or absent ETags and a creating move send none.
+#[test]
+fn a_replacing_move_is_conditional_on_the_seen_etag() {
+    let h = |m: &crate::remote_write::Req| m.headers.iter().find(|(k, _)| *k == "If").map(|(_, v)| v.clone());
+    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "a1b2", true, Some("\"v7\"")).unwrap();
+    let dest = m.headers.iter().find(|(k, _)| *k == "Destination").unwrap().1.clone();
+    assert_eq!(h(&m), Some(format!("<{dest}> ([\"v7\"])")));
+    for seen in [Some("W/\"v7\""), Some("v7"), Some("\"a\"b\""), Some("\""), None] {
+        assert_eq!(h(&move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "a1b2", true, seen).unwrap()), None, "{seen:?}");
+    }
+    assert_eq!(h(&move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "a1b2", false, Some("\"v7\"")).unwrap()), None);
 }

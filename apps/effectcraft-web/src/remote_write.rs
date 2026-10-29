@@ -98,14 +98,20 @@ pub fn head_target(cfg: &Config, path: &str) -> Result<Req, String> {
 }
 
 /// `MOVE` of upload `token`'s `.part` file over the target. `Destination` is an absolute URL on `origin`.
-pub fn move_part(cfg: &Config, origin: &str, path: &str, token: &str, overwrite: bool) -> Result<Req, String> {
+/// When it replaces a file (`overwrite`) and the target's strong ETag seen by the `HEAD` is known
+/// (`seen`), an `If` header tagged with the destination makes the server refuse (`412`) when the
+/// target changed after that `HEAD`. A server that ignores `If` keeps that short window open.
+pub fn move_part(cfg: &Config, origin: &str, path: &str, token: &str, overwrite: bool, seen: Option<&str>) -> Result<Req, String> {
     check_writable(cfg, path)?;
     let dest = format!("{origin}{}", cfg.url_for(path)?);
-    Ok(Req {
-        method: "MOVE",
-        url: cfg.url_for(&part_path(path, token)?)?,
-        headers: vec![("Destination", dest), ("Overwrite", if overwrite { "T" } else { "F" }.into())],
-    })
+    let mut headers = vec![("Destination", dest.clone()), ("Overwrite", if overwrite { "T" } else { "F" }.into())];
+    // a weak validator never matches in an `If` header, and a quote would break the header
+    if let Some(tag) =
+        seen.map(str::trim).filter(|t| overwrite && t.starts_with('"') && t.ends_with('"') && t.len() >= 2 && !t[1..t.len() - 1].contains(['"', '\r', '\n']))
+    {
+        headers.push(("If", format!("<{dest}> ([{tag}])")));
+    }
+    Ok(Req { method: "MOVE", url: cfg.url_for(&part_path(path, token)?)?, headers })
 }
 
 /// `DELETE` of upload `token`'s `.part` file (best effort after a failed save).
