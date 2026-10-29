@@ -28,6 +28,7 @@ pub mod native_menu;
 pub mod panels;
 mod pointer_wrap;
 pub mod prefs_live;
+mod remote_menu;
 pub mod state;
 pub mod theme;
 pub mod updates_ui;
@@ -237,6 +238,8 @@ pub enum Dialog {
     GradientEditor,
     /// Delete a user template from Home? (`panels::templates`).
     DeleteTemplate,
+    /// Open Remote Project / Import from Remote / Save As Remote (`panels::remote_dialog`).
+    Remote,
 }
 
 /// The desktop's light or dark appearance where egui cannot see it (Wayland compositors that send
@@ -276,6 +279,18 @@ pub(crate) struct DialogAnswer {
     pub paths: Vec<String>,
 }
 
+/// The host's remote storage (the web build with an `effectcraft-config.json` that has mounts).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RemoteInfo {
+    /// The mounts as (name, path): the top level of the remote dialog.
+    pub mounts: Vec<(String, String)>,
+}
+
+impl RemoteInfo {
+    /// What `Browser::list` answers while a remote folder is still being read.
+    pub const LOADING: &'static str = "Loading…";
+}
+
 /// Host hooks provided by the native app (file pickers etc.).
 #[derive(Default)]
 pub struct Hooks {
@@ -285,6 +300,13 @@ pub struct Hooks {
     pub pick_files: Option<Box<dyn Fn(&[&str]) -> Vec<String>>>,
     pub pick_save: Option<Box<dyn Fn(&str) -> Option<String>>>,
     pub pick_open_project: Option<Box<dyn Fn() -> Option<String>>>,
+    /// Opens the project at a path the host has to prepare first (the web build fetches a project
+    /// from remote storage, with its media, before `file.open`). Used by
+    /// [`EffectcraftApp::open_project_path`]; without it the path opens with `file.open` directly.
+    pub open_project: Option<Box<dyn Fn(&str)>>,
+    /// The host has remote storage: File ▸ Open Remote Project…, Import from Remote… and Save As
+    /// Remote… appear and the local entries say "Local". `None`: the menus are unchanged.
+    pub remote: Option<RemoteInfo>,
     /// Opens the audio output for preview playback (the desktop app uses cpal).
     pub audio_device: Option<audio::AudioDeviceFactory>,
     /// Lists audio output devices (Settings ▸ Audio).
@@ -656,6 +678,21 @@ impl EffectcraftApp {
             .collect();
         self.session.set_ui_commands(cmds);
         self
+    }
+
+    /// Open the project at `path`: through [`Hooks::open_project`] when the host has one (it opens
+    /// the project itself, later), else with the `file.open` command. Every open by path goes
+    /// through here or through `file.open` / `file.openRecent`, which come here.
+    pub fn open_project_path(&mut self, path: &str) -> Result<serde_json::Value, String> {
+        if let Some(open) = self.hooks.open_project.as_ref() {
+            open(path);
+            return Ok(serde_json::json!({"path": path, "pending": true}));
+        }
+        let r = self.session.execute("file.open", serde_json::json!({"path": path})).map_err(|e| e.to_string());
+        if let Err(e) = &r {
+            self.ui.status = e.clone();
+        }
+        r
     }
 
     /// Show the crash-recovery dialog for a previous run that didn't exit cleanly.

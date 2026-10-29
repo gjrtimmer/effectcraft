@@ -28,6 +28,9 @@ macro_rules! uic {
 /// UI-only commands (not in the AE menus; shortcuts and the command palette).
 pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("window.dockAction", "Docking Action", [], None),
+    uic!("file.openRemote", "Open Remote Project...", [], None),
+    uic!("file.importRemote", "Import from Remote...", [], None),
+    uic!("file.saveAsRemote", "Save As Remote...", [], None),
     uic!("playback.ramPreview", "Preview (Numpad 0)", [], Some("Num0")),
     uic!("playback.preview.shiftSpacebar", "Preview (Shift+Spacebar)", [], Some("Shift+Space")),
     uic!("playback.preview.shiftNumpad0", "Preview (Shift+Numpad 0)", [], Some("Shift+Num0")),
@@ -389,6 +392,17 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
     // Deleting Project items that compositions use asks first, as in After Effects.
     if crate::panels::delete_items::guard(app, id, &params) {
         return Ok(json!({"dialog": "deleteItems"}));
+    }
+    // A host that opens projects itself (remote storage) gets every open by path, after the
+    // unsaved-changes prompt.
+    if let Some(path) = open_target(app, id, &params) {
+        return app.open_project_path(&path);
+    }
+    if let Some(r) = crate::panels::remote_dialog::command(app, id, &params) {
+        if let Err(e) = &r {
+            app.ui.status = e.clone();
+        }
+        return r;
     }
     // J / K and Select All Keyframes act on what the Timeline shows (its revealed properties).
     if matches!(id, "time.nextKey" | "time.previousKey" | "keys.selectAll")
@@ -1383,6 +1397,22 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
     })
 }
 
+/// The project `file.open` / `file.openRecent` is asked to open, when the host opens projects
+/// itself ([`crate::Hooks::open_project`]).
+fn open_target(app: &EffectcraftApp, id: &str, params: &Value) -> Option<String> {
+    app.hooks.open_project.as_ref()?;
+    let recent = &app.session.prefs.recent_projects;
+    match id {
+        "file.open" => params.get("path").and_then(Value::as_str).map(str::to_string),
+        "file.openRecent" => match (params.get("path").and_then(Value::as_str), params.get("index").and_then(Value::as_u64)) {
+            (Some(p), _) => Some(p.to_string()),
+            (None, Some(i)) => recent.get(usize::try_from(i).ok()?).cloned(),
+            _ => recent.first().cloned(),
+        },
+        _ => None,
+    }
+}
+
 /// Commands that need a file or folder path: ask the host's file dialog when `params` lacks one.
 fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
     enum Ask {
@@ -1656,12 +1686,18 @@ pub(crate) fn entry_enabled(app: &EffectcraftApp, e: &MenuEntry) -> bool {
     if e.command == "window.panel" {
         return true;
     }
+    match e.command.as_str() {
+        "file.openRemote" | "file.importRemote" => return true,
+        "file.saveAsRemote" => return app.session.is_enabled("file.saveAs"),
+        _ => {}
+    }
     app.session.is_enabled(&e.command)
 }
 
 /// Every menu entry, flattened with its submenu path.
 pub fn menu_items(app: &EffectcraftApp) -> Vec<MenuItem> {
-    effectcraft_engine::menus::entries()
+    let bar = crate::remote_menu::bar(app);
+    crate::remote_menu::entries(&bar)
         .into_iter()
         .map(|(path, e)| MenuItem {
             id: e.command.clone(),
@@ -2102,7 +2138,8 @@ pub fn menu_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
     ui.horizontal_centered(|ui| {
         ui.add_space(6.0);
         egui::MenuBar::new().config(egui::containers::menu::MenuConfig::new().style(crate::widgets::menu_style)).ui(ui, |ui| {
-            for node in effectcraft_engine::menus::menu_bar() {
+            let bar = crate::remote_menu::bar(app);
+            for node in bar.iter() {
                 let MenuNode::Submenu { label, children } = node else { continue };
                 // The open title takes the open button's look while its menu is up (as in AE).
                 let inactive = ui.style().visuals.widgets.inactive;
