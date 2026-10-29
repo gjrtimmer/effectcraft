@@ -41,6 +41,16 @@ pub mod frames;
 #[cfg(target_arch = "wasm32")]
 pub mod persist;
 #[cfg(target_arch = "wasm32")]
+pub mod remote;
+#[cfg(target_arch = "wasm32")]
+pub mod remote_config;
+#[cfg(target_arch = "wasm32")]
+pub mod remote_dav;
+#[cfg(target_arch = "wasm32")]
+pub mod remote_upload;
+#[cfg(target_arch = "wasm32")]
+pub mod remote_write;
+#[cfg(target_arch = "wasm32")]
 pub mod storage;
 #[cfg(target_arch = "wasm32")]
 pub mod worker;

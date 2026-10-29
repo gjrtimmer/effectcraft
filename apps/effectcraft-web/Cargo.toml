@@ -30,6 +30,8 @@ egui = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu"] }
 log = { workspace = true }
 web-time = { workspace = true }
+roxmltree = "0.21"
+chrono = { workspace = true }
 # The wasm-bindgen CLI used by `cargo xtask web` must be exactly this version.
 wasm-bindgen = "=0.2.129"
 wasm-bindgen-futures = "0.4"
@@ -47,11 +49,22 @@ web-sys = { version = "0.3", features = [
     "FileList",
     "HtmlAnchorElement",
     "HtmlCanvasElement",
+    "Headers",
     "HtmlElement",
     "HtmlInputElement",
     "Location",
     "Navigator",
+    "Request",
+    "RequestCache",
+    "RequestInit",
+    "RequestMode",
+    "Response",
     "Url",
     "UrlSearchParams",
     "Window",
 ] }
+
+# The pure remote-storage modules are tested natively (`tests/it`).
+[dev-dependencies]
+roxmltree = "0.21"
+chrono = { workspace = true }
