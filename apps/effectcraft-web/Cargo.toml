@@ -56,6 +56,8 @@ web-sys = { version = "0.3", features = [
     "HtmlInputElement",
     "Location",
     "Navigator",
+    "ReadableStream",
+    "ReadableStreamDefaultReader",
     "Request",
     "RequestCache",
     "RequestInit",
