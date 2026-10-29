@@ -14,7 +14,7 @@ fn cfg() -> Config {
 
 #[test]
 fn part_file_is_beside_the_target() {
-    assert_eq!(part_path("/rw/a/x.fcproj").unwrap(), "/rw/a/x.fcproj.part");
+    assert_eq!(part_path("/rw/a/x.ecproj").unwrap(), "/rw/a/x.ecproj.part");
     assert!(part_path("/rw/a/").is_err());
     assert!(part_path("").is_err());
 }
@@ -22,35 +22,35 @@ fn part_file_is_beside_the_target() {
 #[test]
 fn only_writable_mounts_take_writes() {
     let c = cfg();
-    assert!(check_writable(&c, "/rw/x.fcproj").is_ok());
-    let e = check_writable(&c, "/ro/x.fcproj").unwrap_err();
+    assert!(check_writable(&c, "/rw/x.ecproj").is_ok());
+    let e = check_writable(&c, "/ro/x.ecproj").unwrap_err();
     assert!(e.contains("read-only"), "{e}");
     assert!(check_writable(&c, "/elsewhere/x").is_err());
-    assert!(put_part(&c, "/ro/x.fcproj").is_err());
-    assert!(move_part(&c, ORIGIN, "/ro/x.fcproj", true).is_err());
-    assert!(delete_part(&c, "/ro/x.fcproj").is_err());
+    assert!(put_part(&c, "/ro/x.ecproj").is_err());
+    assert!(move_part(&c, ORIGIN, "/ro/x.ecproj", true).is_err());
+    assert!(delete_part(&c, "/ro/x.ecproj").is_err());
 }
 
 #[test]
 fn the_upload_goes_to_the_part_file_with_an_encoded_url() {
-    let r = put_part(&cfg(), "/rw/My Films/a#b.fcproj").unwrap();
-    assert_eq!((r.method, r.url.as_str()), ("PUT", "/dav/rw/My%20Films/a%23b.fcproj.part"));
-    let h = head_target(&cfg(), "/rw/My Films/a#b.fcproj").unwrap();
-    assert_eq!((h.method, h.url.as_str()), ("HEAD", "/dav/rw/My%20Films/a%23b.fcproj"));
+    let r = put_part(&cfg(), "/rw/My Films/a#b.ecproj").unwrap();
+    assert_eq!((r.method, r.url.as_str()), ("PUT", "/dav/rw/My%20Films/a%23b.ecproj.part"));
+    let h = head_target(&cfg(), "/rw/My Films/a#b.ecproj").unwrap();
+    assert_eq!((h.method, h.url.as_str()), ("HEAD", "/dav/rw/My%20Films/a%23b.ecproj"));
 }
 
 #[test]
 fn the_move_names_the_destination_and_overwrite() {
-    let m = move_part(&cfg(), ORIGIN, "/rw/x.fcproj", true).unwrap();
-    assert_eq!((m.method, m.url.as_str()), ("MOVE", "/dav/rw/x.fcproj.part"));
-    assert!(m.headers.contains(&("Destination", "https://app.example/dav/rw/x.fcproj".to_string())));
+    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", true).unwrap();
+    assert_eq!((m.method, m.url.as_str()), ("MOVE", "/dav/rw/x.ecproj.part"));
+    assert!(m.headers.contains(&("Destination", "https://app.example/dav/rw/x.ecproj".to_string())));
     assert!(m.headers.contains(&("Overwrite", "T".to_string())));
-    let m = move_part(&cfg(), ORIGIN, "/rw/x.fcproj", false).unwrap();
+    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", false).unwrap();
     assert!(m.headers.contains(&("Overwrite", "F".to_string())));
     // a conditional header on a MOVE would be tested against the .part file: never sent
     assert!(m.headers.iter().all(|(k, _)| !k.eq_ignore_ascii_case("if-match") && !k.eq_ignore_ascii_case("if-none-match")));
-    let d = delete_part(&cfg(), "/rw/x.fcproj").unwrap();
-    assert_eq!((d.method, d.url.as_str()), ("DELETE", "/dav/rw/x.fcproj.part"));
+    let d = delete_part(&cfg(), "/rw/x.ecproj").unwrap();
+    assert_eq!((d.method, d.url.as_str()), ("DELETE", "/dav/rw/x.ecproj.part"));
 }
 
 #[test]
