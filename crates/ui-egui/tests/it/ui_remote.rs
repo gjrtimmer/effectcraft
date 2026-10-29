@@ -8,14 +8,17 @@ use effectcraft_ui_egui::panels::remote_dialog::save_target;
 use effectcraft_ui_egui::{EffectcraftApp, RemoteInfo};
 use serde_json::json;
 
+/// A host that offers one mount.
 fn remote() -> RemoteInfo {
     RemoteInfo { mounts: vec![("Server".into(), "/data".into())] }
 }
 
+/// The File menu's entries as (id, label, path).
 fn items(app: &EffectcraftApp) -> Vec<(String, String, Vec<String>)> {
     effectcraft_ui_egui::menus::menu_items(app).into_iter().map(|i| (i.id, i.label, i.path)).collect()
 }
 
+/// Without remote the menus are the engines.
 #[test]
 fn without_remote_the_menus_are_the_engines() {
     let app = EffectcraftApp::new(Session::default());
@@ -26,6 +29,7 @@ fn without_remote_the_menus_are_the_engines() {
     assert!(got.iter().any(|(id, l)| id == "file.open" && l == "Open Project..."));
 }
 
+/// With remote the file menu has local and remote entries.
 #[test]
 fn with_remote_the_file_menu_has_local_and_remote_entries() {
     let mut app = EffectcraftApp::new(Session::default());
@@ -45,6 +49,7 @@ fn with_remote_the_file_menu_has_local_and_remote_entries() {
     assert!(enabled("file.openRemote") && enabled("file.importRemote"));
 }
 
+/// Open by path goes through the host hook.
 #[test]
 fn open_by_path_goes_through_the_host_hook() {
     let mut app = EffectcraftApp::new(Session::default());
@@ -59,6 +64,7 @@ fn open_by_path_goes_through_the_host_hook() {
     assert_eq!(*seen.borrow(), ["/data/x.ecproj", "/data/b.ecproj", "/data/a.ecproj"]);
 }
 
+/// The remote dialog opens only with remote storage.
 #[test]
 fn the_remote_dialog_opens_only_with_remote_storage() {
     let mut app = EffectcraftApp::new(Session::default());
@@ -69,6 +75,7 @@ fn the_remote_dialog_opens_only_with_remote_storage() {
     assert_eq!(app.dialog, Some(effectcraft_ui_egui::Dialog::Remote));
 }
 
+/// Save names stay in the folder.
 #[test]
 fn save_names_stay_in_the_folder() {
     assert_eq!(save_target("/data/p", "Film").unwrap(), "/data/p/Film.ecproj");

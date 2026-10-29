@@ -39,6 +39,7 @@ pub struct RemoteDialog {
     name: String,
 }
 
+/// `name` in the folder `dir`.
 fn join(dir: &str, name: &str) -> String {
     format!("{}/{name}", dir.trim_end_matches('/'))
 }
@@ -57,6 +58,7 @@ pub fn save_target(dir: &str, name: &str) -> Result<String, String> {
     Ok(join(dir, &name))
 }
 
+/// Open the remote dialog in `mode` with `name` in the file field.
 fn open(app: &mut EffectcraftApp, mode: RemoteMode, name: String) -> Result<Value, String> {
     let Some(info) = app.hooks.remote.as_ref() else { return Err("remote storage is not configured".into()) };
     let dir = if let [(_, only)] = info.mounts.as_slice() { only.clone() } else { String::new() };
@@ -92,6 +94,7 @@ fn crumbs(dir: &str, mounts: &[(String, String)]) -> Vec<(String, String)> {
     out
 }
 
+/// Does the dialog show `e` in `mode`?
 fn visible(mode: &RemoteMode, e: &Entry) -> bool {
     match mode {
         _ if e.is_dir => true,

@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use crate::EffectcraftApp;
 
+/// A menu entry running `command`.
 fn item(label: &str, command: &str) -> MenuNode {
     MenuNode::Item(MenuEntry { label: label.into(), command: command.into(), params: Value::Null, shortcut: None, alt_shortcuts: Vec::new() })
 }
@@ -33,6 +34,7 @@ fn change(nodes: &[MenuNode], command: &str, label: &str, after: Option<(&str, &
     out
 }
 
+/// The File menu with the remote entries added.
 fn file_menu(children: &[MenuNode]) -> Vec<MenuNode> {
     let mut v = change(children, "file.open", "Open Local Project...", Some(("Open Remote Project...", "file.openRemote")));
     for n in &mut v {
@@ -67,6 +69,7 @@ pub(crate) fn bar(app: &EffectcraftApp) -> Cow<'static, [MenuNode]> {
 
 /// Every entry of `nodes` with its submenu path, depth first (as `effectcraft_engine::menus::entries`).
 pub(crate) fn entries(nodes: &[MenuNode]) -> Vec<(Vec<String>, &MenuEntry)> {
+    /// Collect the entries of `nodes` with their menu paths.
     fn rec<'a>(nodes: &'a [MenuNode], path: &mut Vec<String>, out: &mut Vec<(Vec<String>, &'a MenuEntry)>) {
         for n in nodes {
             match n {

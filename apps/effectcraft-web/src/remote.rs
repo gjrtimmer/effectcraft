@@ -61,6 +61,7 @@ thread_local! {
     static T0: web_time::Instant = web_time::Instant::now();
 }
 
+/// Seconds since the page started (monotonic).
 fn now_s() -> f64 {
     T0.with(|t| t.elapsed().as_secs_f64())
 }
@@ -85,6 +86,7 @@ pub fn stat(path: &str) -> Option<Stat> {
     STATE.with(|s| s.borrow().stats.get(path.strip_suffix('/').unwrap_or(path)).cloned())
 }
 
+/// The remote config and the page's origin, or why remote storage is off.
 pub(crate) fn cfg_and_origin() -> Result<(Config, String), String> {
     STATE.with(|s| {
         let s = s.borrow();
@@ -125,6 +127,7 @@ async fn propfind(dir: &str) -> Result<Vec<Child>, String> {
     Ok(remote_dav::children_of(&cfg, &mount, dir, &origin, entries))
 }
 
+/// A listing row for a child of a folder.
 fn entry_of(c: &Child) -> Entry {
     let is_dir = c.entry.is_dir;
     Entry {
@@ -137,6 +140,7 @@ fn entry_of(c: &Child) -> Entry {
     }
 }
 
+/// Store a listing's answer (entries and stats, or the error) for `dir` and end its loading state.
 fn record_dir(dir: &str, res: Result<Vec<Child>, String>) {
     let now = now_s();
     STATE.with(|s| {
@@ -162,6 +166,7 @@ fn record_dir(dir: &str, res: Result<Vec<Child>, String>) {
     });
 }
 
+/// Start the PROPFIND of `dir` in the background; the Media Browser sees it on a later frame.
 fn start_listing(dir: String) {
     // Look again when the last error may give way to "Loading…".
     crate::repaint_after(Duration::from_secs_f64(util::LOADING_GRACE_S + 0.05));

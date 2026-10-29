@@ -11,6 +11,7 @@ use crate::remote_util::{
     opening_status, run_bounded, timeout_for, timeout_message,
 };
 
+/// Limits follow the method.
 #[test]
 fn limits_follow_the_method() {
     for m in ["PROPFIND", "HEAD", "MOVE", "DELETE"] {
@@ -24,6 +25,7 @@ fn limits_follow_the_method() {
     assert!(msg.contains("PROPFIND") && msg.contains("20 s"), "{msg}");
 }
 
+/// A listing keeps its error until the retry runs a while.
 #[test]
 fn a_listing_keeps_its_error_until_the_retry_runs_a_while() {
     use ListingView::*;
@@ -35,6 +37,7 @@ fn a_listing_keeps_its_error_until_the_retry_runs_a_while() {
     assert_eq!(listing_view(false, false, Some(0.0)), Loading);
 }
 
+/// Status texts name the file.
 #[test]
 fn status_texts_name_the_file() {
     assert_eq!(file_name("/Work/a/b.ecproj"), "b.ecproj");
@@ -57,6 +60,7 @@ struct Slow<'a> {
 
 impl Future for Slow<'_> {
     type Output = usize;
+    /// Pending for a few polls, then ready.
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<usize> {
         if !self.started {
             self.started = true;
@@ -73,6 +77,7 @@ impl Future for Slow<'_> {
     }
 }
 
+/// Run a future to completion with a waker that does nothing.
 fn block_on<T>(f: impl Future<Output = T>) -> T {
     let mut f = Box::pin(f);
     let mut cx = Context::from_waker(Waker::noop());
@@ -83,6 +88,7 @@ fn block_on<T>(f: impl Future<Output = T>) -> T {
     }
 }
 
+/// Bounded runner limits concurrency and keeps order.
 #[test]
 fn bounded_runner_limits_concurrency_and_keeps_order() {
     let (live, peak) = (Cell::new(0), Cell::new(0));
@@ -98,6 +104,7 @@ fn bounded_runner_limits_concurrency_and_keeps_order() {
     assert!(block_on(run_bounded(Vec::<u8>::new(), 4, |_| async { 1 })).is_empty());
 }
 
+/// A failed item does not stop the others.
 #[test]
 fn a_failed_item_does_not_stop_the_others() {
     let seen = RefCell::new(vec![]);
