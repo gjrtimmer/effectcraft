@@ -251,15 +251,16 @@ the app behaves as before and no remote menu entries appear.
 Put `effectcraft-config.json` next to `index.html`:
 
 ```json
-{"remote":{"mounts":[{"path":"/data","url":"dav/","name":"Server","writable":true}]}}
+{"remote":{"mounts":[{"path":"/data","url":"dav/","name":"Server","writable":true}],"listCacheSeconds":15}}
 ```
 
 | Field | |
 |---|---|
-| `path` | Virtual path of the mount (`/data`). Absolute, no `..`; it may not be `/files`, `/projects`, `/exports`, `/opfs` or `/recovered`, and mounts may not overlap. Projects written by the headless MCP use the same paths, so they open unchanged. |
+| `path` | Virtual path of the mount (`/data`). Absolute, no `..`; it may not be `/Browser Storage` or `/Folders` (the local places), and mounts may not overlap. Projects the headless MCP server wrote open unchanged when `path` equals the data root that server uses (the paths inside the project then match). |
 | `url` | The WebDAV collection: relative to the page (`dav/`), a path on the same site (`/dav/`) or an absolute URL on the page's own origin. Other origins are refused. |
 | `name` | Name in the Media Browser and the remote dialog (default: the last segment of `path`). |
 | `writable` | `true` allows saving to the mount. Default `false`: read-only. |
+| `remote.listCacheSeconds` | Optional, next to `mounts`: how long a folder listing is reused before the server is asked again (seconds, default `15`, clamped to 0 to 3600; `0` revalidates every time the folder is refreshed). Not a number: the default. |
 
 At most 16 mounts. A missing, invalid or non-JSON file (a single-page app that answers 200 with its
 index page, for example) turns the feature off and logs one line. Serve the file with
@@ -268,7 +269,7 @@ index page, for example) turns the feature off and logs one line. Serve the file
 What it gives you:
 
 - Each mount is a place in the Media Browser. Listings are WebDAV `PROPFIND` (Depth 1), cached for
-  15 seconds and refreshed in the background; a folder that is still loading shows "Loading…".
+  `listCacheSeconds` (15 by default) and refreshed in the background; a folder that is still loading shows "Loading…".
 - **File ▸ Open Remote Project…**, **Import from Remote…** and **Save As Remote…** open the remote
   dialog. The local entries are then labelled "Local". Right-click a project in the Media Browser
   for **Open Project…**; Open Recent and Home open remote projects too.
@@ -293,16 +294,27 @@ mounts, `PUT`, `MOVE`, `HEAD` and ETags). For example, behind one nginx:
 ```nginx
 location /effectcraft/ { root /srv/www; }                 # the static app + effectcraft-config.json
 location /effectcraft/dav/ {
-    proxy_pass http://127.0.0.1:8080/;                    # a WebDAV server
-    proxy_set_header Host $host;
-    client_max_body_size 64m;                             # saved projects
+    proxy_pass http://127.0.0.1:8080;                     # a WebDAV server; no URI here, the prefix is kept
+    proxy_set_header Host $http_host;                     # the Destination of a MOVE names this host
+    client_max_body_size 0;                               # saved projects, no limit
+    proxy_request_buffering off;
 }
 ```
 
-with `rclone serve webdav /srv/projects --addr 127.0.0.1:8080` (add `--read-only` for a read-only
-mount), or Apache with `mod_dav` and `mod_dav_fs` (`Dav On` on the folder). The server's own access
-control applies; the browser sends the page's cookies and HTTP authentication as for any
-same-origin request.
+with `rclone serve webdav /srv/projects --addr 127.0.0.1:8080 --baseurl /effectcraft/dav` (add
+`--read-only` for a read-only mount), or Apache with `mod_dav` and `mod_dav_fs` (`Dav On` on the
+folder). The server's own access control applies; the browser sends the page's cookies and HTTP
+authentication as for any same-origin request.
+
+Three rules keep saving working:
+
+- The proxy must not strip the location prefix: write `proxy_pass http://127.0.0.1:8080;` without
+  a trailing `/` or path. With `proxy_pass http://…:8080/;` the server sees paths without the
+  prefix, but the `Destination` header of the `MOVE` that finishes a save still carries it, so the
+  save fails.
+- `rclone --baseurl` equals the location prefix (`/effectcraft/dav`), and the mount's `url` is that
+  same prefix: relative to the page (`dav/`) or absolute (`/effectcraft/dav/`).
+- `--read-only` on the server goes with `"writable": false` in the config, and the other way round.
 
 ### Audio
 
