@@ -32,8 +32,6 @@ const ERROR_RETRY_S: f64 = 5.0;
 const STAT_MAX: usize = 200_000;
 /// Media paths of one project fetched when it opens.
 const MEDIA_MAX: usize = 10_000;
-/// Largest config file read.
-pub(crate) const CONFIG_MAX: usize = 64 * 1024;
 
 /// What the server said about one path.
 #[derive(Clone, Debug)]
@@ -138,16 +136,13 @@ pub(crate) fn cfg_and_origin() -> Result<(Config, String), String> {
     })
 }
 
-/// Read `./effectcraft-config.json`; remote storage stays off when it is missing or invalid.
+/// Read the `remote` key of `./effectcraft-config.json` (fetched once for all keys); remote
+/// storage stays off when it is missing or invalid.
 pub async fn load_config() {
     let Some(loc) = web_sys::window().map(|w| w.location()) else { return };
     let (origin, path) = (loc.origin().unwrap_or_default(), loc.pathname().unwrap_or_default());
     let base_dir = path.get(..=path.rfind('/').unwrap_or(0)).unwrap_or("/").to_string();
-    let bytes = match fetch("GET", "effectcraft-config.json", &[], None).await {
-        Ok(r) if r.status() == 200 => read_body(&r, CONFIG_MAX).await,
-        Ok(r) => Err(format!("status {}", r.status())),
-        Err(e) => Err(e),
-    };
+    let bytes = crate::config_file::bytes().await.ok_or_else(|| "no config file".to_string());
     match bytes.and_then(|b| remote_config::parse(&b, &origin, &base_dir)) {
         Ok(cfg) => {
             log::info!("remote storage: {} mount(s)", cfg.mounts.len());

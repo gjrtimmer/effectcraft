@@ -304,6 +304,25 @@ mount), or Apache with `mod_dav` and `mod_dav_fs` (`Dav On` on the folder). The 
 control applies; the browser sends the page's cookies and HTTP authentication as for any
 same-origin request.
 
+### Startup project
+
+By default the page opens the last visit's project, and the demo project on a first visit. A
+`startup` key in `effectcraft-config.json` (next to `index.html`) changes that:
+
+```json
+{"startup":"empty"}
+```
+
+| Value | On load |
+|---|---|
+| `"last"` (or no key) | the last visit's project; the demo project on a first visit |
+| `"empty"` | the last visit's project; a blank project on a first visit, never the demo |
+| `"demo"` | the demo project, whatever the last visit left |
+
+The `?empty` and `?demo` URL flags still win. A missing, invalid or non-JSON file, or an unknown
+value, is the default. The file is fetched once per page load; serve it with
+`Cache-Control: no-cache` (the service worker never caches it).
+
 ### Audio
 
 Audio preview goes through **Web Audio**: an AudioWorklet (`audio-worklet.js`; a

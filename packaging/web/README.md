@@ -70,6 +70,19 @@ To let the app open, import and save through a WebDAV server on the same origin,
 Set `"writable": true` to allow saving. Without the file the feature is off. Serve the file with
 `Cache-Control: no-cache`. Details and server examples: [docs/web.md](../../docs/web.md#remote-storage).
 
+## Startup project (optional)
+
+To choose what the page opens on load, add an `effectcraft-config.json` next to `index.html`:
+
+```json
+{"startup":"empty"}
+```
+
+`"empty"` restores the last visit's project and otherwise starts blank (never the demo); `"demo"`
+always opens the demo project; `"last"` (the default) restores the last visit's project and shows
+the demo on a first visit. Serve the file with `Cache-Control: no-cache`. Details:
+[docs/web.md](../../docs/web.md#startup-project).
+
 ## Embedding in a page (iframe)
 
 ```html

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use effectcraft_engine::Session;
 
-use crate::{api, audio, browse, diskcache, files, frames, persist, remote, storage, worker};
+use crate::{api, audio, browse, config_file, diskcache, files, frames, persist, remote, storage, worker};
 use effectcraft_ui_egui::EffectcraftApp;
 use serde_json::json;
 use wasm_bindgen::prelude::*;
@@ -226,6 +226,8 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
     // Same-origin WebDAV mounts (optional `./effectcraft-config.json`).
     remote::load_config().await;
     api::set_info("remote", json!(remote::enabled()));
+    // The same config file says what to open on load (fetched once, shared with the mounts above).
+    let startup = config_file::startup().await;
     browse::restore();
     diskcache::init();
     storage::refresh();
@@ -261,10 +263,11 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                 let mut session = session();
                 session.load_settings();
                 let recovery = session.begin_recovery();
-                // `?empty`: a blank project; `?demo`: the demo project; otherwise the last visit's
-                // project (the demo on a first visit).
-                let restored = !empty && !query_flag("demo") && persist::restore(&mut session);
-                if !restored && !empty {
+                // `?empty`: a blank project; `?demo`: the demo project; otherwise what the config's
+                // `startup` says (default: the last visit's project, the demo on a first visit).
+                let demo = query_flag("demo");
+                let restored = !empty && !demo && startup.restores() && persist::restore(&mut session);
+                if !restored && !empty && (demo || startup.demo_when_nothing_restored()) {
                     let _ = session.execute("file.openDemoProject", json!({}));
                 }
                 api::set_info("restored", json!(restored));

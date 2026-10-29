@@ -11,3 +11,4 @@ mod remote_dav_tests;
 #[path = "../../src/remote_write.rs"]
 mod remote_write;
 mod remote_write_tests;
+mod startup_tests;
