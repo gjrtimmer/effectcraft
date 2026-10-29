@@ -11,6 +11,10 @@ mod remote_dav_tests;
 #[path = "../../src/remote_roots.rs"]
 mod remote_roots;
 #[allow(dead_code)]
+#[path = "../../src/remote_util.rs"]
+mod remote_util;
+mod remote_util_tests;
+#[allow(dead_code)]
 #[path = "../../src/remote_write.rs"]
 mod remote_write;
 mod remote_write_tests;

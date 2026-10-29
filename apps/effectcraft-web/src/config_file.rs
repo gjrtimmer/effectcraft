@@ -2,10 +2,8 @@
 
 use std::cell::RefCell;
 
-use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::JsFuture;
-
 use crate::startup::{self, Startup};
+use crate::{remote_http, remote_util};
 
 thread_local! {
     /// `None`: not fetched yet; `Some(None)`: no usable file.
@@ -13,17 +11,16 @@ thread_local! {
 }
 
 async fn fetch() -> Option<Vec<u8>> {
-    let init = web_sys::RequestInit::new();
-    // Always ask the server: the file is the operator's switch, never a cached copy.
-    init.set_cache(web_sys::RequestCache::NoCache);
-    let req = web_sys::Request::new_with_str_and_init("effectcraft-config.json", &init).ok()?;
-    let resp: web_sys::Response = JsFuture::from(web_sys::window()?.fetch_with_request(&req)).await.ok()?.dyn_into().ok()?;
+    // Always asked from the server (the file is the operator's switch, never a cached copy), and
+    // time-limited: a server that does not answer counts as no file, the app still starts.
+    let resp = remote_http::fetch_within("GET", "effectcraft-config.json", &[], None, remote_util::CONFIG_TIMEOUT)
+        .await
+        .inspect_err(|e| log::info!("config file: {e}"))
+        .ok()?;
     if resp.status() != 200 {
         return None;
     }
-    let buf = JsFuture::from(resp.array_buffer().ok()?).await.ok()?;
-    let a = js_sys::Uint8Array::new(&buf);
-    (a.length() as usize <= startup::CONFIG_MAX).then(|| a.to_vec())
+    remote_http::read_body(&resp, startup::CONFIG_MAX).await.ok()
 }
 
 /// The config file's bytes (`None` when there is none), fetched on the first call.
