@@ -58,18 +58,22 @@ pub fn file_name(path: &str) -> &str {
     path.trim_end_matches('/').rsplit('/').next().unwrap_or(path)
 }
 
+/// Status line while a remote project opens.
 pub fn opening_status(path: &str) -> String {
     format!("Opening {}…", file_name(path))
 }
 
+/// Status line once a remote project is open.
 pub fn opened_status(path: &str) -> String {
     format!("Opened {}", file_name(path))
 }
 
+/// Status line while a project's media is fetched (`done` of `total`).
 pub fn media_progress_status(path: &str, done: usize, total: usize) -> String {
     format!("Opening {}: media {done}/{total}…", file_name(path))
 }
 
+/// Status line naming (up to three of) the media files that could not be fetched.
 pub fn media_failed_status(failed: &[String]) -> String {
     format!("{} media file(s) could not be loaded: {}", failed.len(), failed.iter().take(3).cloned().collect::<Vec<_>>().join("; "))
 }
