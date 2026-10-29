@@ -242,6 +242,68 @@ Window ▸ Media Browser browses a virtual tree (`src/browse.rs`):
 
 `mediaBrowser.list` reports the places and these actions; `mediaBrowser.action {action}` runs one.
 
+### Remote storage
+
+The page can mount folders of a WebDAV server as virtual paths, so projects and media live on a
+server instead of being picked from the local disk. Without the config file below nothing changes:
+the app behaves as before and no remote menu entries appear.
+
+Put `effectcraft-config.json` next to `index.html`:
+
+```json
+{"remote":{"mounts":[{"path":"/data","url":"dav/","name":"Server","writable":true}]}}
+```
+
+| Field | |
+|---|---|
+| `path` | Virtual path of the mount (`/data`). Absolute, no `..`; it may not be `/files`, `/projects`, `/exports`, `/opfs` or `/recovered`, and mounts may not overlap. Projects written by the headless MCP use the same paths, so they open unchanged. |
+| `url` | The WebDAV collection: relative to the page (`dav/`), a path on the same site (`/dav/`) or an absolute URL on the page's own origin. Other origins are refused. |
+| `name` | Name in the Media Browser and the remote dialog (default: the last segment of `path`). |
+| `writable` | `true` allows saving to the mount. Default `false`: read-only. |
+
+At most 16 mounts. A missing, invalid or non-JSON file (a single-page app that answers 200 with its
+index page, for example) turns the feature off and logs one line. Serve the file with
+`Cache-Control: no-cache`; the service worker never caches it.
+
+What it gives you:
+
+- Each mount is a place in the Media Browser. Listings are WebDAV `PROPFIND` (Depth 1), cached for
+  15 seconds and refreshed in the background; a folder that is still loading shows "Loading…".
+- **File ▸ Open Remote Project…**, **Import from Remote…** and **Save As Remote…** open the remote
+  dialog. The local entries are then labelled "Local". Right-click a project in the Media Browser
+  for **Open Project…**; Open Recent and Home open remote projects too.
+- A remote file is fetched whole into memory when a project or an import needs it (it is not
+  written to browser storage), up to 1 GiB per file; a larger file is refused with a message.
+  Opening a project fetches the media it refers to; what cannot be fetched shows as missing and is
+  named in the status line. There is no ranged reader yet, so large media cost memory and time.
+- Everything a server sends is treated as untrusted: capped body and listing sizes, hrefs outside
+  the mount dropped, malformed XML and ranges refused.
+
+Saving to a mount with `"writable": true` is a background upload: the project is uploaded to
+`<name>.ecproj.part` beside the target, the target's ETag is compared with the one seen when the
+project was opened (or last saved), and the `.part` file is moved over it. If another editor
+changed the project meanwhile (the headless MCP on the same file, say), nothing is overwritten: the
+status line says "Project changed on the server; use Save As" and the project stays unsaved. Any
+other failure also leaves it unsaved and says why. WebDAV has no atomic compare-and-move, so a
+change between the check and the move is not caught; a server without ETags cannot be checked.
+
+Any WebDAV server on the page's origin works if it supports `PROPFIND` and `GET` (and, for writable
+mounts, `PUT`, `MOVE`, `HEAD` and ETags). For example, behind one nginx:
+
+```nginx
+location /effectcraft/ { root /srv/www; }                 # the static app + effectcraft-config.json
+location /effectcraft/dav/ {
+    proxy_pass http://127.0.0.1:8080/;                    # a WebDAV server
+    proxy_set_header Host $host;
+    client_max_body_size 64m;                             # saved projects
+}
+```
+
+with `rclone serve webdav /srv/projects --addr 127.0.0.1:8080` (add `--read-only` for a read-only
+mount), or Apache with `mod_dav` and `mod_dav_fs` (`Dav On` on the folder). The server's own access
+control applies; the browser sends the page's cookies and HTTP authentication as for any
+same-origin request.
+
 ### Audio
 
 Audio preview goes through **Web Audio**: an AudioWorklet (`audio-worklet.js`; a
