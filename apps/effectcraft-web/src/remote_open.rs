@@ -93,8 +93,10 @@ pub async fn open_project(path: &str) -> Result<(), String> {
     if r.status() != 200 {
         return Err(format!("{path}: the server answered {}", r.status()));
     }
-    crate::remote_upload::note_opened(path, header(&r, "etag"));
+    let etag = header(&r, "etag");
     let bytes = read_body(&r, remote_dav::MAX_PROJECT_BYTES as usize).await?;
+    // the version a save is checked against: only of a project that was read whole
+    crate::remote_upload::note_opened(path, etag);
     let project = path.to_string();
     let failed = fetch_all(&media_paths(path, &bytes), |done, total| {
         let status = util::media_progress_status(&project, done, total);

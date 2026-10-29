@@ -3,22 +3,25 @@
 use crate::remote_config::{Config, parse};
 use crate::remote_write::{
     Known, Outcome, Precondition, check_writable, classify_move, classify_put, delete_part, failure_message, head_target, move_part, part_path, precondition,
-    put_part,
+    put_part, valid_token,
 };
 
 const ORIGIN: &str = "https://app.example";
 
+/// A config with one writable and one read-only mount.
 fn cfg() -> Config {
     parse(br#"{"remote":{"mounts":[{"path":"/rw","url":"/dav/rw/","writable":true,"name":"Work"},{"path":"/ro","url":"/dav/ro/"}]}}"#, ORIGIN, "/").unwrap()
 }
 
+/// Part file is beside the target.
 #[test]
 fn part_file_is_beside_the_target() {
-    assert_eq!(part_path("/rw/a/x.ecproj").unwrap(), "/rw/a/x.ecproj.part");
-    assert!(part_path("/rw/a/").is_err());
-    assert!(part_path("").is_err());
+    assert_eq!(part_path("/rw/a/x.ecproj", "a1b2").unwrap(), "/rw/a/x.ecproj.a1b2.part");
+    assert!(part_path("/rw/a/", "a1b2").is_err());
+    assert!(part_path("", "a1b2").is_err());
 }
 
+/// Only writable mounts take writes.
 #[test]
 fn only_writable_mounts_take_writes() {
     let c = cfg();
@@ -26,41 +29,45 @@ fn only_writable_mounts_take_writes() {
     let e = check_writable(&c, "/ro/x.ecproj").unwrap_err();
     assert!(e.contains("read-only"), "{e}");
     assert!(check_writable(&c, "/elsewhere/x").is_err());
-    assert!(put_part(&c, "/ro/x.ecproj").is_err());
-    assert!(move_part(&c, ORIGIN, "/ro/x.ecproj", true).is_err());
-    assert!(delete_part(&c, "/ro/x.ecproj").is_err());
+    assert!(put_part(&c, "/ro/x.ecproj", "a1b2").is_err());
+    assert!(move_part(&c, ORIGIN, "/ro/x.ecproj", "a1b2", true).is_err());
+    assert!(delete_part(&c, "/ro/x.ecproj", "a1b2").is_err());
 }
 
+/// The upload goes to the part file with an encoded url.
 #[test]
 fn the_upload_goes_to_the_part_file_with_an_encoded_url() {
-    let r = put_part(&cfg(), "/rw/My Films/a#b.ecproj").unwrap();
-    assert_eq!((r.method, r.url.as_str()), ("PUT", "/dav/rw/My%20Films/a%23b.ecproj.part"));
+    let r = put_part(&cfg(), "/rw/My Films/a#b.ecproj", "a1b2").unwrap();
+    assert_eq!((r.method, r.url.as_str()), ("PUT", "/dav/rw/My%20Films/a%23b.ecproj.a1b2.part"));
     let h = head_target(&cfg(), "/rw/My Films/a#b.ecproj").unwrap();
     assert_eq!((h.method, h.url.as_str()), ("HEAD", "/dav/rw/My%20Films/a%23b.ecproj"));
 }
 
+/// The move names the destination and overwrite.
 #[test]
 fn the_move_names_the_destination_and_overwrite() {
-    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", true).unwrap();
-    assert_eq!((m.method, m.url.as_str()), ("MOVE", "/dav/rw/x.ecproj.part"));
+    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "a1b2", true).unwrap();
+    assert_eq!((m.method, m.url.as_str()), ("MOVE", "/dav/rw/x.ecproj.a1b2.part"));
     assert!(m.headers.contains(&("Destination", "https://app.example/dav/rw/x.ecproj".to_string())));
     assert!(m.headers.contains(&("Overwrite", "T".to_string())));
-    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", false).unwrap();
+    let m = move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "a1b2", false).unwrap();
     assert!(m.headers.contains(&("Overwrite", "F".to_string())));
     // a conditional header on a MOVE would be tested against the .part file: never sent
     assert!(m.headers.iter().all(|(k, _)| !k.eq_ignore_ascii_case("if-match") && !k.eq_ignore_ascii_case("if-none-match")));
-    let d = delete_part(&cfg(), "/rw/x.ecproj").unwrap();
-    assert_eq!((d.method, d.url.as_str()), ("DELETE", "/dav/rw/x.ecproj.part"));
+    let d = delete_part(&cfg(), "/rw/x.ecproj", "a1b2").unwrap();
+    assert_eq!((d.method, d.url.as_str()), ("DELETE", "/dav/rw/x.ecproj.a1b2.part"));
 }
 
+/// Hostile paths build no request.
 #[test]
 fn hostile_paths_build_no_request() {
     for p in ["/rw/../ro/x", "/rw/a//b", "/rw/a\\b", "/rw/"] {
-        assert!(put_part(&cfg(), p).is_err(), "{p}");
-        assert!(move_part(&cfg(), ORIGIN, p, true).is_err(), "{p}");
+        assert!(put_part(&cfg(), p, "a1b2").is_err(), "{p}");
+        assert!(move_part(&cfg(), ORIGIN, p, "a1b2", true).is_err(), "{p}");
     }
 }
 
+/// A changed target is a conflict not an overwrite.
 #[test]
 fn a_changed_target_is_a_conflict_not_an_overwrite() {
     let was = Known::Etag("\"v1\"".into());
@@ -71,7 +78,7 @@ fn a_changed_target_is_a_conflict_not_an_overwrite() {
     assert_eq!(precondition(&was, 200, None), Precondition::Proceed { overwrite: true });
     assert_eq!(precondition(&Known::NoEtag, 200, Some("\"x\"")), Precondition::Proceed { overwrite: true });
     // a file this session never saw must not exist
-    assert_eq!(precondition(&Known::Unknown, 200, Some("\"x\"")), Precondition::Conflict);
+    assert_eq!(precondition(&Known::Unknown, 200, Some("\"x\"")), Precondition::Exists);
     assert_eq!(precondition(&Known::Unknown, 404, None), Precondition::Proceed { overwrite: false });
     assert_eq!(precondition(&was, 404, None), Precondition::Proceed { overwrite: false });
     for s in [401, 403, 500, 503, 301] {
@@ -79,6 +86,7 @@ fn a_changed_target_is_a_conflict_not_an_overwrite() {
     }
 }
 
+/// Answers are classified exactly.
 #[test]
 fn answers_are_classified_exactly() {
     for s in [200, 201, 204] {
@@ -95,9 +103,26 @@ fn answers_are_classified_exactly() {
     }
 }
 
+/// Failures say what to do.
 #[test]
 fn failures_say_what_to_do() {
     assert_eq!(failure_message(&Outcome::Saved), None);
     assert!(failure_message(&Outcome::Conflict).unwrap().contains("Save As"));
+    assert!(failure_message(&Outcome::Exists).unwrap().contains("already exists"));
     assert!(failure_message(&Outcome::Failed("x".into())).unwrap().contains("x"));
+}
+
+/// Every upload has a part file of its own.
+#[test]
+fn every_upload_has_a_part_file_of_its_own() {
+    let a = put_part(&cfg(), "/rw/x.ecproj", "aaaa").unwrap();
+    let b = put_part(&cfg(), "/rw/x.ecproj", "bbbb").unwrap();
+    assert_ne!(a.url, b.url);
+    // the move and the cleanup name the same part file as the upload
+    assert_eq!(move_part(&cfg(), ORIGIN, "/rw/x.ecproj", "aaaa", true).unwrap().url, a.url);
+    assert_eq!(delete_part(&cfg(), "/rw/x.ecproj", "aaaa").unwrap().url, a.url);
+    for bad in ["", "a/b", "a.b", "..", "a b", "é"] {
+        assert!(put_part(&cfg(), "/rw/x.ecproj", bad).is_err(), "{bad:?}");
+    }
+    assert!(!valid_token(&"a".repeat(65)));
 }
