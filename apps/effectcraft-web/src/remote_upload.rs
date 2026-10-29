@@ -132,16 +132,16 @@ async fn upload_steps(cfg: &crate::remote_config::Config, origin: &str, path: &s
         Ok(r) => r,
         Err(e) => return step(e),
     };
-    let overwrite = match send(&head, None).await {
+    let (overwrite, seen) = match send(&head, None).await {
         Ok(r) => match rw::precondition(&known(path), r.status(), header(&r, "etag").as_deref()) {
-            Precondition::Proceed { overwrite } => overwrite,
+            Precondition::Proceed { overwrite } => (overwrite, header(&r, "etag")),
             Precondition::Conflict => return Outcome::Conflict,
             Precondition::Exists => return Outcome::Exists,
             Precondition::Failed(e) => return step(e),
         },
         Err(e) => return step(e),
     };
-    let mv = match rw::move_part(cfg, origin, path, token, overwrite) {
+    let mv = match rw::move_part(cfg, origin, path, token, overwrite, seen.as_deref()) {
         Ok(r) => r,
         Err(e) => return step(e),
     };
