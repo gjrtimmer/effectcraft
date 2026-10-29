@@ -95,8 +95,6 @@ pub async fn open_project(path: &str) -> Result<(), String> {
     }
     let etag = header(&r, "etag");
     let bytes = read_body(&r, remote_dav::MAX_PROJECT_BYTES as usize).await?;
-    // the version a save is checked against: only of a project that was read whole
-    crate::remote_upload::note_opened(path, etag);
     let project = path.to_string();
     let failed = fetch_all(&media_paths(path, &bytes), |done, total| {
         let status = util::media_progress_status(&project, done, total);
@@ -107,8 +105,11 @@ pub async fn open_project(path: &str) -> Result<(), String> {
     crate::files::put_remote(path, Arc::from(bytes));
     let path = path.to_string();
     crate::post(move |app| match app.session.execute("file.open", json!({"path": path})) {
-        Ok(_) if !failed.is_empty() => app.ui.status = util::media_failed_status(&failed),
-        Ok(_) => app.ui.status = util::opened_status(&path),
+        Ok(_) => {
+            // the version a save is checked against: only of a project that was read whole and opened
+            crate::remote_upload::note_opened(&path, etag);
+            app.ui.status = if failed.is_empty() { util::opened_status(&path) } else { util::media_failed_status(&failed) };
+        }
         Err(e) => app.ui.status = e.to_string(),
     });
     Ok(())
