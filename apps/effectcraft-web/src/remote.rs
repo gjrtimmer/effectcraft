@@ -28,8 +28,6 @@ pub const FILE_MAX: u64 = 1 << 30;
 const ERROR_RETRY_S: f64 = 5.0;
 /// Entries kept in the stat cache.
 const STAT_MAX: usize = 200_000;
-/// Media paths of one project fetched when it opens.
-const MEDIA_MAX: usize = 10_000;
 /// Largest config file read.
 pub(crate) const CONFIG_MAX: usize = 64 * 1024;
 
@@ -271,25 +269,6 @@ pub async fn fetch_file(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The media (and proxy) file paths a project file refers to, relative ones made absolute next to
-/// the project.
-fn media_paths(project: &str, bytes: &[u8]) -> Vec<String> {
-    let Ok(text) = std::str::from_utf8(bytes) else { return Vec::new() };
-    let Ok((proj, _)) = effectcraft_engine::project::Project::from_json_repaired(text) else { return Vec::new() };
-    let dir = remote_config::parent(project).unwrap_or("/").trim_end_matches('/').to_string();
-    let mut out = Vec::new();
-    for it in proj.items.values() {
-        let effectcraft_engine::project::ItemKind::Footage(f) = &it.kind else { continue };
-        let proxy = it.proxy.as_ref().map(|p| &p.footage);
-        for f in std::iter::once(f).chain(proxy) {
-            for p in std::iter::once(&f.path).chain(&f.sequence).filter(|p| !p.is_empty()) {
-                out.push(if p.starts_with('/') { p.clone() } else { format!("{dir}/{p}") });
-            }
-        }
-    }
-    out
-}
-
 /// Drop what is cached about `path` and its folder (after it was written): the next look asks again.
 pub fn forget(path: &str) {
     STATE.with(|s| {
@@ -299,45 +278,6 @@ pub fn forget(path: &str) {
             s.dirs.remove(p);
         }
     });
-}
-
-/// Fetch every remote file of `paths`; what failed is named in the status line.
-pub async fn fetch_all(paths: &[String]) -> Vec<String> {
-    let mut failed = Vec::new();
-    for p in paths.iter().filter(|p| is_remote(p)).take(MEDIA_MAX) {
-        if let Err(e) = fetch_file(p).await {
-            log::info!("remote file {p}: {e}");
-            failed.push(e);
-        }
-    }
-    failed
-}
-
-/// Open the project at a remote path: fetch it and its media, then `file.open`. Media that cannot
-/// be fetched stay missing (the engine reports them offline) and are named in the status line.
-pub async fn open_project(path: &str) -> Result<(), String> {
-    let st = ensure_stat(path).await?;
-    if st.is_dir || st.size > remote_dav::MAX_PROJECT_BYTES {
-        return Err(format!("{path}: not a project file this size can open"));
-    }
-    let (cfg, _) = cfg_and_origin()?;
-    let r = fetch("GET", &cfg.url_for(path)?, &[], None).await?;
-    if r.status() != 200 {
-        return Err(format!("{path}: the server answered {}", r.status()));
-    }
-    crate::remote_upload::note_opened(path, header(&r, "etag"));
-    let bytes = read_body(&r, remote_dav::MAX_PROJECT_BYTES as usize).await?;
-    let failed = fetch_all(&media_paths(path, &bytes)).await;
-    crate::files::put_remote(path, Arc::from(bytes));
-    let path = path.to_string();
-    crate::post(move |app| match app.session.execute("file.open", json!({"path": path})) {
-        Ok(_) if !failed.is_empty() => {
-            app.ui.status = format!("{} media file(s) could not be loaded: {}", failed.len(), failed.iter().take(3).cloned().collect::<Vec<_>>().join("; "))
-        }
-        Ok(_) => {}
-        Err(e) => app.ui.status = e.to_string(),
-    });
-    Ok(())
 }
 
 /// Route "open project by path" through the remote fetch and offer the remote menu entries.
@@ -357,7 +297,7 @@ pub fn install_hooks(app: &mut EffectcraftApp) {
             return;
         }
         wasm_bindgen_futures::spawn_local(async move {
-            if let Err(e) = open_project(&path).await {
+            if let Err(e) = crate::remote_open::open_project(&path).await {
                 crate::post(move |app| app.ui.status = e);
             }
         });

@@ -49,6 +49,8 @@ pub mod remote_dav;
 #[cfg(target_arch = "wasm32")]
 pub mod remote_http;
 #[cfg(target_arch = "wasm32")]
+pub mod remote_open;
+#[cfg(target_arch = "wasm32")]
 pub mod remote_roots;
 #[cfg(target_arch = "wasm32")]
 pub mod remote_upload;

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use effectcraft_engine::Session;
 
-use crate::{api, audio, browse, diskcache, files, frames, persist, remote, storage, worker};
+use crate::{api, audio, browse, diskcache, files, frames, persist, remote, remote_open, storage, worker};
 use effectcraft_ui_egui::EffectcraftApp;
 use serde_json::json;
 use wasm_bindgen::prelude::*;
@@ -283,6 +283,9 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                 }
                 install_hooks(&mut app);
                 remote::install_hooks(&mut app);
+                if restored {
+                    remote_open::refetch_restored(&app);
+                }
                 // Viewer frames render in frame workers (`?frameworkers=N`, 0 or `?noworkers`:
                 // on the page's thread), each on its own WebGPU device where the browser has
                 // WebGPU in workers (`?nogpuworkers`: their CPU).
