@@ -9,8 +9,10 @@
 //!
 //! The check is a `HEAD` before the `MOVE`, not an `If-Match` header on the `MOVE`: a conditional
 //! header on a `MOVE` is evaluated against the source (the `.part` file), where it can never match.
-//! A change in the moments between the `HEAD` and the `MOVE` is not caught (WebDAV has no atomic
-//! compare-and-move). A move that overwrites nothing sends `Overwrite: F`, so the server refuses it
+//! A move that replaces a file also carries an `If` header tagged with the target's URL and the
+//! strong ETag the `HEAD` showed (not `If-Match`, which would be tested against the part file), so
+//! a server that supports `If` refuses it (`412`) when the target changed after the `HEAD`. A
+//! server that ignores `If` leaves the moments between the `HEAD` and the `MOVE` open. A move that overwrites nothing sends `Overwrite: F`, so the server refuses it
 //! (`412`) when the target appeared meanwhile.
 //!
 //! Pure (no browser types), so it runs natively in `tests/it`.
