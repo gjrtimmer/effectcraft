@@ -24,8 +24,6 @@ use crate::remote_dav::{self, Child};
 
 /// The largest remote file fetched (bytes): it is held in memory, twice while it is copied in.
 pub const FILE_MAX: u64 = 1 << 30;
-/// A cached listing is shown for this long before it is refreshed (seconds).
-const LIST_TTL_S: f64 = 15.0;
 /// A failed listing is not retried for this long (seconds).
 const ERROR_RETRY_S: f64 = 5.0;
 /// Entries kept in the stat cache.
@@ -45,6 +43,8 @@ pub struct Stat {
 struct DirState {
     entries: Option<Vec<Entry>>,
     fetched: f64,
+    /// Whether the listing was handed out since it was fetched (a TTL of 0 refetches after that).
+    shown: bool,
     loading: bool,
     error: Option<(String, f64)>,
 }
@@ -191,6 +191,7 @@ fn record_dir(dir: &str, res: Result<Vec<Child>, String>) {
             Ok(children) => {
                 st.error = None;
                 st.fetched = now;
+                st.shown = false;
                 st.entries = Some(children.iter().map(entry_of).collect());
                 if s.stats.len() > STAT_MAX {
                     s.stats.clear();
@@ -226,13 +227,16 @@ pub fn list_entries(dir: &str, importable_only: bool) -> Option<Result<Vec<Entry
     let now = now_s();
     let (result, start) = STATE.with(|s| {
         let mut s = s.borrow_mut();
+        let ttl = s.cfg.as_ref().map_or(remote_config::DEFAULT_LIST_CACHE_S, |c| c.list_cache_s);
         let st = s.dirs.entry(dir.clone()).or_default();
-        let fresh = st.entries.is_some() && now - st.fetched < LIST_TTL_S;
+        // A listing that was not shown yet is always fresh, so a TTL of 0 does not refetch in a loop.
+        let fresh = st.entries.is_some() && (!st.shown || now - st.fetched < ttl);
         let blocked = st.loading || st.error.as_ref().is_some_and(|(_, at)| now - at < ERROR_RETRY_S);
         let start = !fresh && !blocked;
         if start {
             st.loading = true;
         }
+        st.shown |= st.entries.is_some();
         let result = match (&st.entries, &st.error) {
             (Some(e), _) => Ok(e.clone()),
             (None, Some((msg, at))) if now - at < ERROR_RETRY_S => Err(msg.clone()),
