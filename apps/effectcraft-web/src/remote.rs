@@ -350,8 +350,6 @@ pub async fn fetch_all(paths: &[String]) -> Vec<String> {
 /// Open the project at a remote path: fetch it and its media, then `file.open`. Media that cannot
 /// be fetched stay missing (the engine reports them offline) and are named in the status line.
 pub async fn open_project(path: &str) -> Result<(), String> {
-    let msg = format!("Opening {path}…");
-    crate::post(move |app| app.ui.status = msg);
     let st = ensure_stat(path).await?;
     if st.is_dir || st.size > remote_dav::MAX_PROJECT_BYTES {
         return Err(format!("{path}: not a project file this size can open"));
@@ -361,6 +359,7 @@ pub async fn open_project(path: &str) -> Result<(), String> {
     if r.status() != 200 {
         return Err(format!("{path}: the server answered {}", r.status()));
     }
+    crate::remote_upload::note_opened(path, header(&r, "etag"));
     let bytes = read_body(&r, remote_dav::MAX_PROJECT_BYTES as usize).await?;
     let failed = fetch_all(&media_paths(path, &bytes)).await;
     crate::files::put_remote(path, Arc::from(bytes));

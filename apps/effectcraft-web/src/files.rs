@@ -123,6 +123,10 @@ impl Services for WebServices {
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("{path}: open it with File ▸ Open (or drop it on the page)")))
     }
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
+        // a path on a remote mount: uploaded to the server (writable mounts) or refused (read-only)
+        if let Some(r) = crate::remote_upload::write(path, data) {
+            return r;
+        }
         put(path, data.into());
         let quiet = {
             let mut q = QUIET.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
