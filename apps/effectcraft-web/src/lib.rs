@@ -41,6 +41,8 @@ pub mod frames;
 #[cfg(target_arch = "wasm32")]
 pub mod persist;
 #[cfg(target_arch = "wasm32")]
+pub mod remote;
+#[cfg(target_arch = "wasm32")]
 pub mod remote_config;
 #[cfg(target_arch = "wasm32")]
 pub mod remote_dav;

@@ -31,6 +31,11 @@ pub fn put(path: &str, data: Arc<[u8]>) {
     STORE.put_file(path, data, true);
 }
 
+/// Store a file fetched from remote storage: in the table, not persisted to browser storage.
+pub fn put_remote(path: &str, data: Arc<[u8]>) {
+    STORE.put_file(path, data, false);
+}
+
 pub fn get(path: &str) -> Option<Arc<[u8]>> {
     STORE.file(path)
 }
