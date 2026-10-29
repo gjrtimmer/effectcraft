@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use effectcraft_engine::Session;
 
+use crate::startup::Startup;
 use crate::{api, audio, browse, config_file, diskcache, files, frames, persist, remote, remote_open, storage, worker};
 use effectcraft_ui_egui::EffectcraftApp;
 use serde_json::json;
@@ -89,7 +90,7 @@ pub(crate) fn open_or_import(app: &mut EffectcraftApp, paths: Vec<String>) {
 /// The eframe app: the shared EffectCraft UI plus the browser host's per-frame duties.
 pub struct WebApp {
     pub app: EffectcraftApp,
-    /// Keep the session snapshot (off with `?empty`).
+    /// Keep the session snapshot (off with `?empty` and an explicit `"demo"` startup).
     pub persist: bool,
 }
 
@@ -226,8 +227,11 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
     // Same-origin WebDAV mounts (optional `./effectcraft-config.json`).
     remote::load_config().await;
     api::set_info("remote", json!(remote::enabled()));
-    // The same config file says what to open on load (fetched once, shared with the mounts above).
-    let startup = config_file::startup().await;
+    // The same config file says what to open on load (fetched once, shared with the mounts above);
+    // `?empty` and `?demo` decide by themselves.
+    let startup = if empty || query_flag("demo") { Startup::default() } else { config_file::startup().await };
+    // An explicit `"demo"` start leaves the saved session alone: the demo must not overwrite it.
+    let keep_session = !empty && startup.keeps_session();
     browse::restore();
     diskcache::init();
     storage::refresh();
@@ -253,7 +257,7 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                     // The canvas can't present any more (#225): the page says so over it and
                     // offers a reload, which brings the session back when browser storage keeps it.
                     let lost = gpu_failures.clone();
-                    let kept = !empty && persist::backend() != "memory";
+                    let kept = keep_session && persist::backend() != "memory";
                     rs.device.set_device_lost_callback(move |reason, message| {
                         let message = format!("GPU device lost ({reason:?}): {message}");
                         lost.report(&message, true);
@@ -297,7 +301,7 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                 app = app.with_control(rx);
                 let backend = cc.wgpu_render_state.as_ref().map(|rs| format!("{:?}", rs.adapter.get_info().backend));
                 api::set_info("backend", json!(backend));
-                Ok(Box::new(WebApp { app, persist: !empty }))
+                Ok(Box::new(WebApp { app, persist: keep_session }))
             }),
         )
         .await?;
